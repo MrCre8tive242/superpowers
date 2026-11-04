@@ -26,14 +26,17 @@ def _service():
     return build("drive", "v3", credentials=creds)
 
 
-def upload_folder(local_dir: Path, folder_name: str, log=print) -> str:
+def upload_folder(files, folder_name: str, log=print) -> str:
+    import mimetypes
+
     svc = _service()
     meta = {"name": folder_name, "mimeType": "application/vnd.google-apps.folder"}
     if config.DRIVE_PARENT_FOLDER_ID:
         meta["parents"] = [config.DRIVE_PARENT_FOLDER_ID]
     folder = svc.files().create(body=meta, fields="id,webViewLink").execute()
-    for f in sorted(local_dir.glob("*.png")):
-        media = MediaFileUpload(str(f), mimetype="image/png", resumable=True)
+    for f in files:
+        mime = mimetypes.guess_type(f.name)[0] or "application/octet-stream"
+        media = MediaFileUpload(str(f), mimetype=mime, resumable=True)
         svc.files().create(
             body={"name": f.name, "parents": [folder["id"]]}, media_body=media, fields="id"
         ).execute()

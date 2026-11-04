@@ -1,59 +1,86 @@
-"""Step 1: read the mockup + your rules, return one self-contained prompt per asset."""
+"""Step 1: read the mockup + your rules, return one self-contained prompt per asset.
+
+Three stages, so assets cannot be merged by accident:
+  1. survey   - list every distinct visible object, then group them into numbered assets
+  2. review   - a second look that splits any asset still bundling separate objects
+  3. prompts  - one call PER asset, each writing a prompt for that single asset only
+"""
 import base64
 import json
 import mimetypes
+import re
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from openai import OpenAI
 
 from . import config
 
-OVERRIDE = """
-AUTOMATION OVERRIDE (this replaces the "reply format" and "Create Assets 1 to 3 first" parts of the rules):
-You are feeding a script, not a chat. Return ONLY valid JSON, no prose, in this shape:
-{
-  "mode": "3D short sleeve | 3D long sleeve | cut and sew short sleeve | cut and sew long sleeve",
-  "assumed_mode": true/false,
-  "notes": ["practical notes for the user, e.g. place real photos by hand"],
-  "assets": [
-    {
-      "n": 1,
-      "name": "short_slug_like_front_title",
-      "kind": "element" or "background",
-      "print_inches": [width, height],
-      "prompt": "a COMPLETE standalone image prompt for THIS ONE asset only"
-    }
-  ]
+AUTOMATION = """
+AUTOMATION OVERRIDE (replaces the reply format, the batching and the "wait for continue" parts of the rules):
+You are feeding a script, not a chat. Reply with JSON only. The script does its own batching, so never limit the
+list to 3 or 4 and never mention "continue" or "Batch 2". If the user message contains a CORRECTION line,
+it overrides your own reading of the mockup.
+"""
+
+SURVEY = """
+TASK: survey the mockup. Do not write image prompts yet.
+First list every distinct visible object one by one in "objects_seen" (each animal, character, person, prop,
+moon, sun, vehicle, badge, flag, lettering group, sleeve graphic, edge decoration). Name animals precisely
+(moose vs reindeer, snowy owl vs barn owl).
+Then build "inventory" following the rules' numbering order. Splitting rules:
+- The main focal graphic is ONLY the main subject (for example a pair of matching animals posed together).
+- EVERY other animal, character, prop, moon or object is its OWN asset, even if it overlaps the focal graphic.
+- Lettering groups in different places are separate assets. Attached flourishes stay with their lettering.
+- Each sleeve graphic that differs from the body is its own asset.
+- Only keep things together when they are one inseparable crest or emblem.
+- The clean background file(s) are LAST. 3D = one background per printed side shown; cut and sew = 4 pieces.
+Return JSON:
+{"mode": "3D short sleeve | 3D long sleeve | cut and sew short sleeve | cut and sew long sleeve",
+ "assumed_mode": true/false,
+ "notes": ["short practical notes for the user, per the rules"],
+ "objects_seen": ["..."],
+ "inventory": [{"n": 1, "name": "short_slug", "kind": "element|background",
+                "what": "exactly what this one asset contains and where it sits",
+                "print_inches": [width, height]}]}
+print_inches = realistic printed size. Elements: about 10 in on the longest side unless clearly smaller or larger.
+Backgrounds: use the sizes in the rules.
+"""
+
+REVIEW = """
+TASK: review this inventory against the mockup and the objects list. If any asset bundles more than one
+separate object (for example "owl, moose and snowman" or "leopards with a snowman"), split it into separate
+assets. Add any visible object that is missing. Fix wrong species or misspelled text. Do not merge anything.
+Renumber in the rules' order with the background(s) last. Return JSON: {"inventory": [ ...same entry shape... ]}
+"""
+
+ONE_PROMPT = """
+TASK: write the finished image prompt for ONE asset only (given below). It is sent to the image model on its own
+with the mockup attached, so it must be fully self-contained and follow the PROMPT STRUCTURE in the rules:
+the opening sentence, PRODUCT line, a description of ONLY this asset (exact text, colors, shapes, style, what to
+remove and keep), the RULES lines, LOOK CLOSELY AT for this asset, and the IF YOU CANNOT MATCH sentence.
+Say clearly that everything else in the mockup (the other assets listed) must NOT appear in this image.
+For a 3D background include the required continuous-design paragraph word for word.
+Do NOT end with "create assets 1 to 3" or "wait for continue". Use none of the banned words.
+Return JSON: {"prompt": "..."}
+"""
+
+# Words the rules ban inside image prompts, with safe replacements.
+BANNED = {
+    r"\bextraction\b": "recreation",
+    r"\bextract(ed|ing|s)?\b": "recreate",
+    r"\bisolat(e|ed|ing)\b": "redraw",
+    r"\bcut[- ]out\b": "redrawn",
+    r"\bmask(ed|ing|s)?\b": "cover",
+    r"\btrac(e|ed|ing)\b": "redraw",
+    r"\bpixel[- ](identical|accurate)\b": "faithful",
+    r"\bverify\b": "make sure",
+    r"\bcheck\b": "look closely at",
+    r"\balpha channel\b": "transparent background",
+    r"\bRGBA\b": "transparent",
+    r"\bdimensions\b": "size",
+    r"\baudit\b": "look over",
 }
-Each asset's "prompt" must be fully self-contained because it is sent to the image model on its own with the
-mockup attached: include the opening sentence, the PRODUCT line, the exact text/colors/shapes for this asset,
-the RULES, the LOOK CLOSELY AT list and the IF YOU CANNOT MATCH sentence from the rules. Describe ONLY this asset.
-Do not write "wait for continue".
-IMPORTANT: the "3 or 4 assets per message" limit does NOT apply here. The script does its own batching, so
-list EVERY asset from your full inventory in this one JSON (all lettering, the focal graphic, every supporting
-element, every sleeve element, edge decorations, and the clean background file(s) last). Never stop at 3 and
-never write "continue with the rest" or "Batch 2" in the notes: return the complete list now.
-SPLIT RULE: never merge supporting elements into the focal graphic. The focal graphic is ONLY the main subject.
-Every other animal, character, prop, moon, snowman, owl, badge, flower or similar object is its OWN asset, and each
-sleeve graphic (snowflake clusters, trees, stripes that differ from the body) is its OWN asset. Typical shirts have
-6 to 10 assets. Identify animals precisely (for example moose versus reindeer, owl species) by looking closely.
-If the user gives a hint line after the word "extraction", treat it as a correction that overrides your reading.
-Keep every banned word out of the prompts exactly as the rules require.
-print_inches: realistic printed size of the asset on the garment (background per the rules' sizes; elements
-default to about 10 inches on the longest side unless clearly smaller or larger). Background assets go LAST.
-"""
-
-
-INVENTORY_MODE = """
-INVENTORY MODE: do NOT write image prompts yet. Only list the assets, following the numbering order in the rules.
-Return ONLY JSON: {"inventory": [{"n": 1, "name": "short_slug", "kind": "element" or "background",
-"what": "one short sentence describing exactly this one item and where it sits"}]}
-Be strict about splitting: the focal graphic is only the main subject. EVERY other animal, character, prop, moon,
-snowman, owl, badge or object is its OWN entry. Each sleeve graphic that differs from the body is its OWN entry.
-Lettering groups in different places are separate entries. The clean background is the LAST entry.
-Identify animals precisely (moose versus reindeer, etc). A shirt like a scene with 6 distinct things has 6+ entries.
-If the user gave a correction hint, it overrides your reading.
-"""
 
 
 def _data_url(path: Path) -> str:
@@ -61,46 +88,85 @@ def _data_url(path: Path) -> str:
     return f"data:{mime};base64," + base64.b64encode(path.read_bytes()).decode()
 
 
-def plan(mockup: Path, hint: str = "") -> dict:
+def clean_prompt(text: str) -> str:
+    for pat, rep in BANNED.items():
+        text = re.sub(pat, rep, text, flags=re.IGNORECASE)
+    text = re.sub(r"(?i)create assets? \d+.*?(continue|wait)[^.]*\.?", "", text).strip()
+    return text
+
+
+def _norm_entry(e: dict, i: int) -> dict:
+    kind = "background" if str(e.get("kind", "")).lower().startswith("back") else "element"
+    inches = e.get("print_inches") or [config.DEFAULT_ELEMENT_INCHES] * 2
+    try:
+        inches = [float(inches[0]), float(inches[1])]
+    except (TypeError, ValueError, IndexError):
+        inches = [config.DEFAULT_ELEMENT_INCHES] * 2
+    name = re.sub(r"[^a-z0-9]+", "_", str(e.get("name") or f"asset_{i}").lower()).strip("_")
+    return {"n": i, "name": name or f"asset_{i}", "kind": kind,
+            "what": e.get("what", ""), "print_inches": inches}
+
+
+def plan(mockup: Path, hint: str = "", log=print) -> dict:
     rules = config.RULES_FILE.read_text(encoding="utf-8")
-    user_text = "extraction" + (f"\n{hint}" if hint else "")
+    system = rules + "\n\n" + AUTOMATION
+    correction = f"\nCORRECTION FROM THE USER: {hint}" if hint else ""
     client = OpenAI()
     image_url = _data_url(mockup)
 
-    def ask(system, text):
+    def ask(task: str) -> dict:
         resp = client.chat.completions.create(
             model=config.PLANNER_MODEL,
             response_format={"type": "json_object"},
             messages=[
                 {"role": "system", "content": system},
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": text},
-                        {"type": "image_url", "image_url": {"url": image_url}},
-                    ],
-                },
+                {"role": "user", "content": [
+                    {"type": "text", "text": "extraction" + correction + "\n\n" + task},
+                    {"type": "image_url", "image_url": {"url": image_url}},
+                ]},
             ],
         )
         return json.loads(resp.choices[0].message.content)
 
-    # Pass 1: inventory only. A short list is much harder to merge by accident.
-    inv = ask(rules + "\n\n" + INVENTORY_MODE, user_text)
-    inventory = inv.get("inventory", [])
-    # Pass 2: one prompt per inventory entry, no merging allowed.
-    forced = (
-        user_text
-        + "\n\nFINAL INVENTORY (you MUST produce exactly one asset per entry, same order, same n and name, "
-        + "no merging and no extra assets; the background stays last):\n"
-        + json.dumps(inventory, indent=1)
-    )
-    data = ask(rules + "\n\n" + OVERRIDE, forced)
-    data["inventory"] = inventory  # kept in plan.json so we can see what pass 1 found
-    assets = data.get("assets", [])
-    if not assets:
-        raise RuntimeError("Planner returned no assets")
-    for i, a in enumerate(assets, 1):
-        a.setdefault("n", i)
-        a.setdefault("kind", "element")
-        a.setdefault("print_inches", [config.DEFAULT_ELEMENT_INCHES] * 2)
-    return data
+    # 1. survey
+    survey = ask(SURVEY)
+    inventory = survey.get("inventory", [])
+    log(f"Survey found {len(inventory)} assets from {len(survey.get('objects_seen', []))} objects")
+
+    # 2. review / split
+    reviewed = ask(REVIEW + "\nOBJECTS SEEN:\n" + json.dumps(survey.get("objects_seen", []))
+                   + "\nINVENTORY:\n" + json.dumps(inventory, indent=1)).get("inventory")
+    if reviewed and len(reviewed) >= len(inventory):  # a review may only split, never merge
+        inventory = reviewed
+    # keep elements first, backgrounds last, then renumber
+    inventory = [e for e in inventory if not str(e.get("kind", "")).lower().startswith("back")] + \
+                [e for e in inventory if str(e.get("kind", "")).lower().startswith("back")]
+    inventory = [_norm_entry(e, i) for i, e in enumerate(inventory, 1)]
+    if not inventory:
+        raise RuntimeError("Planner found no assets")
+
+    # 3. one prompt per asset, in parallel
+    listing = "\n".join(f"{e['n']}. {e['name']}: {e['what']}" for e in inventory)
+    mode = survey.get("mode", "3D short sleeve")
+
+    def write(e):
+        task = (ONE_PROMPT + f"\nPRODUCT MODE: {mode}\nALL ASSETS (for context only):\n{listing}\n\n"
+                f"WRITE THE PROMPT FOR ASSET {e['n']} ONLY: {e['name']} - {e['what']}")
+        e = dict(e, mode=mode)
+        e["prompt"] = clean_prompt(ask(task).get("prompt", ""))
+        return e
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        assets = list(pool.map(write, inventory))
+    empty = [a["name"] for a in assets if not a["prompt"]]
+    if empty:
+        raise RuntimeError(f"Planner wrote no prompt for: {empty}")
+
+    return {
+        "mode": mode,
+        "assumed_mode": survey.get("assumed_mode", False),
+        "notes": survey.get("notes", []),
+        "objects_seen": survey.get("objects_seen", []),
+        "hint": hint,
+        "assets": assets,
+    }

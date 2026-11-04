@@ -32,6 +32,8 @@ PLANNER_MODEL = env("PLANNER_MODEL", "gpt-4.1")      # vision model that reads t
 IMAGE_MODEL = env("IMAGE_MODEL", "gpt-image-1")
 IMAGE_QUALITY = env("IMAGE_QUALITY", "high")          # low | medium | high
 BATCH_SIZE = int(env("BATCH_SIZE", "3"))
+# "high" makes the image model stick closer to the attached mockup. Set empty to disable.
+IMAGE_INPUT_FIDELITY = env("IMAGE_INPUT_FIDELITY", "high")
 
 # Print targets
 BACKGROUND_DPI = int(env("BACKGROUND_DPI", "150"))

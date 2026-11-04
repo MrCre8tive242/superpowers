@@ -1,46 +1,66 @@
 # Shirt extraction pipeline (Windows)
 
-Drop a mockup into `Inbox/`. The script plans the layers (using `rules/extraction_rules.md`),
-generates each layer in batches of 3, upscales only what needs it in Topaz Gigapixel, then waits
-for your OK before uploading to Google Drive and giving you a share link.
+Drop a mockup into `Inbox\`. The script plans the layers using `rules\extraction_rules.md`,
+generates each layer as a transparent PNG (3 at a time), upscales only what needs it in Topaz
+Gigapixel, then waits for your OK before uploading to Google Drive and giving you a share link.
 
-## One-time setup
+## Commands (run in Command Prompt inside the shirt-pipeline folder)
 
-1. Install Python 3.11+ from python.org (tick "Add to PATH").
-2. In this folder: `pip install -r requirements.txt`
-3. Create a file named `.env` here:
-   ```
-   OPENAI_API_KEY=sk-...your key...
-   GIGAPIXEL_EXE=C:\Program Files\Topaz Labs LLC\Topaz Gigapixel\gigapixel.exe
-   ```
-   (Keep this file private. It is git-ignored.)
-4. Google Drive: in Google Cloud Console (signed in as Cre8tiveminds242@gmail.com) create a project,
-   enable the Drive API, create an OAuth client of type "Desktop app", download it as `credentials.json`
-   into this folder. The first upload opens a browser to sign in once.
-5. Optional: put your pattern diagram at `rules/LONG_SLEEVE_PATTERN_REFERENCE.png` for cut-and-sew jobs.
+| Command | What it does |
+|---|---|
+| `python run.py plan-only "Inbox\shirt.jpg"` | Plans the layers only (a few cents). Check the list first. |
+| `python run.py process "Inbox\shirt.jpg"` | Plan, generate, upscale. Stops for your review. |
+| `python run.py redo shirt 3 5` | Regenerates assets 3 and 5 only (after a bad or refused image). |
+| `python run.py approve shirt` | Uploads `Work\shirt\final` to Drive, prints the share link. |
+| `python run.py watch` | Leave running: every mockup dropped in `Inbox\` gets processed. |
+| `python run.py probe-topaz` | Shows Gigapixel's command-line options (or lists the .exe files it finds). |
 
-## Daily use
+Put the file name in quotes when it has spaces. The shirt name used by `redo`/`approve` is the
+file name in lowercase with spaces turned into `_` (e.g. `roots shirt.jpg` -> `roots_shirt`).
+
+## Corrections (hints)
+
+If the planner misreads something, add a correction after the file name:
+```
+python run.py plan-only "Inbox\winter.jpg" "The animal on the left is a moose. CRUSADERS is on the wearer's left sleeve."
+```
+For `watch` mode, save the correction as a text file with the same name as the mockup (`Inbox\winter.txt`).
+
+## How planning works
+
+1. **Survey**: lists every object on the shirt, then groups them into numbered assets.
+2. **Review**: a second look that splits anything still bundled (e.g. "owl, moose and snowman").
+3. **Prompts**: one call per asset, so each prompt describes only that asset. Words your rules ban
+   (extract, isolate, mask, verify...) are replaced automatically.
+
+## Upscale rules (change in `.env`)
+
+- Background: `BACKGROUND_DPI=150` at its print size. Elements: `ELEMENT_DPI=200`.
+- Passes of 2x until the visible artwork (transparent margins ignored) reaches the target, then any
+  overshoot is trimmed back down so files stay a sensible size. `MAX_UPSCALE_PASSES=3`.
+- Gigapixel command: `GIGAPIXEL_ARGS` (default `--cli -i "{input}" -o "{outdir}" --scale 2 --model "{model}"`)
+  is UNVERIFIED until we see `probe-topaz` output.
+
+## Other settings (`.env`)
 
 ```
-python run.py watch                  # leave running; drop mockups in Inbox\
-python run.py approve roots_shirt    # after you review Work\roots_shirt\final
+OPENAI_API_KEY=sk-...
+GIGAPIXEL_EXE=C:\Program Files\Topaz Labs LLC\Topaz Gigapixel\gigapixel.exe
+PLANNER_MODEL=gpt-4.1        # try a stronger vision model if splitting is still weak
+IMAGE_QUALITY=high           # low | medium | high
+IMAGE_INPUT_FIDELITY=high    # sticks closer to the mockup; leave empty to turn off
+DRIVE_PARENT_FOLDER_ID=      # optional: Drive folder ID to put every shirt folder inside
 ```
 
-Test the cheap parts first:
-```
-python run.py plan-only Inbox\roots_shirt.png   # writes Work\roots_shirt\plan.json, no images generated
-python run.py probe-topaz                        # prints Gigapixel's CLI flags
-```
+## Google Drive
 
-## Upscale rules (edit in `.env` if needed)
-
-- Background: 150 DPI at its print size (about 36 x 28 in) -> up to two 2x passes
-- Elements: 200 DPI at about 10 in -> usually one 2x pass, or none if already big enough
-- Model: `Wonder 3.5`. Topaz cloud rendering from the CLI is UNVERIFIED. If `probe-topaz`
-  shows no way to pick that model, adjust `GIGAPIXEL_ARGS` or tell me what it prints.
+`credentials.json` (Desktop app OAuth client) goes in this folder. The first `approve` opens a
+browser to sign in. In Testing mode Google expires the sign-in after 7 days: if upload fails with
+an auth error, delete `token.json` and approve again.
 
 ## Known limits
 
-- Each image call is independent, so a layer can drift slightly from the mockup. The review step exists for that.
-- Real customer photos and client logos are placed by hand (per your rules); the planner prints notes.
-- Image API refusals (e.g. look-alike mascots) are logged per asset and skipped, not fatal.
+- Each layer is generated separately, so it can drift slightly from the mockup. That is what the review step is for.
+- Image API refusals (e.g. look-alikes of known mascots) are reported per asset; fix the prompt in
+  `Work\<shirt>\plan.json` and use `redo`.
+- Real customer photos and client logos are placed by hand, per your rules.
