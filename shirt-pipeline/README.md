@@ -4,19 +4,38 @@ Drop a mockup into `Inbox\`. The script plans the layers using `rules\extraction
 generates each layer as a transparent PNG (3 at a time), upscales only what needs it in Topaz
 Gigapixel, then waits for your OK before uploading to Google Drive and giving you a share link.
 
+## Daily flow
+
+1. `python run.py process "Inbox\roots shirt.jpg"` (or leave `python run.py watch` running and drop mockups in `Inbox\`).
+2. The script plans the layers, generates them, and puts them in **`Ready\roots shirt\`**.
+   You get a Windows pop-up, the folder opens, and (optionally) an email. The alert lists which files
+   are below about 150 DPI at print size, so you know what to upscale.
+3. Upscale what you want in Gigapixel and save it into the same folder. Overwrite the original, or keep both:
+   when two files share the same number (e.g. `02_...png` and `02_...-gigapixel-2x.png`), the newest one is uploaded.
+4. `python run.py approve "roots shirt"` uploads the folder to Google Drive as "roots shirt", sets it to
+   "anyone with the link", prints the link, saves it as `DRIVE LINK.txt` in the folder and in `Work\links.csv`.
+
 ## Commands (run in Command Prompt inside the shirt-pipeline folder)
 
 | Command | What it does |
 |---|---|
-| `python run.py plan-only "Inbox\shirt.jpg"` | Plans the layers only (a few cents). Check the list first. |
-| `python run.py process "Inbox\shirt.jpg"` | Plan, generate, upscale. Stops for your review. |
-| `python run.py redo shirt 3 5` | Regenerates assets 3 and 5 only (after a bad or refused image). |
-| `python run.py approve shirt` | Uploads `Work\shirt\final` to Drive, prints the share link. |
+| `python run.py plan-only "Inbox\shirt.jpg" "hint"` | Plans the layers only (a few cents). |
+| `python run.py process "Inbox\shirt.jpg" "hint"` | Plan, generate, package into `Ready\shirt`, alert you. |
+| `python run.py redo "shirt" 3 5` | Regenerates assets 3 and 5 only and replaces them in the Ready folder. |
+| `python run.py approve "shirt"` | Uploads `Ready\shirt` to Drive, prints the share link. |
 | `python run.py watch` | Leave running: every mockup dropped in `Inbox\` gets processed. |
-| `python run.py probe-topaz` | Shows Gigapixel's command-line options (or lists the .exe files it finds). |
+| `python run.py models` | Lists the OpenAI models your account can use. |
 
-Put the file name in quotes when it has spaces. The shirt name used by `redo`/`approve` is the
-file name in lowercase with spaces turned into `_` (e.g. `roots shirt.jpg` -> `roots_shirt`).
+## Email alert (optional)
+
+Add to `.env`:
+```
+NOTIFY_EMAIL_TO=Cre8tiveminds242@gmail.com
+GMAIL_ADDRESS=Cre8tiveminds242@gmail.com
+GMAIL_APP_PASSWORD=xxxx xxxx xxxx xxxx
+```
+The app password comes from myaccount.google.com > Security > 2-Step Verification > App passwords
+(2-Step Verification must be on). Never use your normal Gmail password here.
 
 ## Corrections (hints)
 
@@ -33,36 +52,19 @@ For `watch` mode, save the correction as a text file with the same name as the m
 3. **Prompts**: one call per asset, so each prompt describes only that asset. Words your rules ban
    (extract, isolate, mask, verify...) are replaced automatically.
 
-## Upscaling with Gigapixel (default: drag-and-drop mode)
+## Automatic upscaling (optional, off by default)
 
-Your Gigapixel (1.4.0) is the desktop app and has no command-line mode, so by default the script
-prepares everything and you do one drag-and-drop:
-
-1. After `process`, the script puts files that need upscaling in `Work\<shirt>\to_upscale\2x`, `4x`, `6x`
-   (files that need none go straight to `final`). The log prints the exact folders.
-2. In Gigapixel: drag in the `2x` folder, choose **Wonder 3.5**, **cloud render**, scale **2x**, output **PNG**,
-   export to `Work\<shirt>\upscaled`. Repeat for `4x` and `6x` if they exist.
-   Gigapixel's own file-name endings (like `-gigapixel-wonder-2x`) are fine.
-3. `python run.py finish <shirt>` picks them up, trims any overshoot to your DPI, and puts them in `final`.
-4. Review `final`, then `python run.py approve <shirt>`.
-
-If Topaz ever gives you a working command-line tool, set `UPSCALE_MODE=cli` in `.env` and the script
-will run it automatically.
-
-## Upscale rules (change in `.env`)
-
-- Background: `BACKGROUND_DPI=150` at its print size. Elements: `ELEMENT_DPI=200`.
-- Passes of 2x until the visible artwork (transparent margins ignored) reaches the target, then any
-  overshoot is trimmed back down so files stay a sensible size. `MAX_UPSCALE_PASSES=3`.
-- Gigapixel command: `GIGAPIXEL_ARGS` (default `--cli -i "{input}" -o "{outdir}" --scale 2 --model "{model}"`)
-  is UNVERIFIED until we see `probe-topaz` output.
+`UPSCALE_MODE=off` (default) skips upscaling; you do it during review. `UPSCALE_MODE=manual` sorts files into
+`Work\<shirt>\to_upscale\2x/4x/6x` for a Gigapixel drag-and-drop and `python run.py finish <shirt>`
+collects them. `UPSCALE_MODE=cli` only works with a Gigapixel version that has a command-line tool.
 
 ## Other settings (`.env`)
 
 ```
 OPENAI_API_KEY=sk-...
 GIGAPIXEL_EXE=C:\Program Files\Topaz Labs LLC\Topaz Gigapixel\gigapixel.exe
-PLANNER_MODEL=gpt-4.1        # try a stronger vision model if splitting is still weak
+PLANNER_MODEL=gpt-5.6-terra  # vision model that plans the layers
+IMAGE_MODEL=gpt-image-2.5-sunburst
 IMAGE_QUALITY=high           # low | medium | high
 IMAGE_INPUT_FIDELITY=high    # sticks closer to the mockup; leave empty to turn off
 DRIVE_PARENT_FOLDER_ID=      # optional: Drive folder ID to put every shirt folder inside
