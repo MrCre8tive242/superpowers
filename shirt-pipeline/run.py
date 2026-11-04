@@ -4,6 +4,7 @@
   python run.py process "Inbox\\x.jpg" [hint]   plan -> generate -> upscale one mockup
   python run.py plan-only "Inbox\\x.jpg" [hint] only write the plan (cheap, no images)
   python run.py redo x 3 5                  regenerate assets 3 and 5 of shirt x, then upscale them
+  python run.py finish x                    after Gigapixel: pick up Work\\x\\upscaled into final
   python run.py approve x                   upload Work\\x\\final to Drive, print the share link
   python run.py probe-topaz                 show Gigapixel's command-line options
 
@@ -68,6 +69,11 @@ def build(wd: Path, plan: dict, assets: list):
     status_file = wd / "status.json"
     status = json.loads(status_file.read_text()) if status_file.exists() else {"failed": []}
     failed = set(status.get("failed", []))
+    if config.UPSCALE_MODE != "cli":
+        failed = sort_for_manual_upscale(wd, assets, results, failed)
+        status.update(name=wd.name, label=plan.get("label", wd.name), failed=sorted(failed), approved=False)
+        status_file.write_text(json.dumps(status, indent=2), encoding="utf-8")
+        return
     log("Upscaling ...")
     for a in assets:
         r = results[a["n"]]
@@ -88,6 +94,74 @@ def build(wd: Path, plan: dict, assets: list):
     if failed:
         log(f"Failed assets: {sorted(failed)}  ->  python run.py redo {wd.name} <numbers>")
     log(f"When happy: python run.py approve {wd.name}")
+
+
+def sort_for_manual_upscale(wd: Path, assets, results, failed):
+    """Copy files that need no upscale to final, and sort the rest into to_upscale\\2x, 4x, 6x."""
+    import shutil
+
+    final, todo = wd / "final", wd / "to_upscale"
+    (wd / "upscaled").mkdir(parents=True, exist_ok=True)
+    final.mkdir(parents=True, exist_ok=True)
+    buckets = {}
+    for a in assets:
+        r = results[a["n"]]
+        if not r["path"]:
+            failed.add(a["name"])
+            continue
+        failed.discard(a["name"])
+        src = Path(r["path"])
+        for old in list(final.glob(src.stem + ".*")) + list(todo.glob(f"*/{src.stem}.*")):
+            old.unlink()  # replace an older version of this asset
+        scale = upscaler.manual_bucket(src, a)
+        if scale is None:
+            shutil.copy2(src, final / src.name)
+            upscaler.finish_file(final / src.name, a, log, note="no upscale needed", trim=False)
+        else:
+            (todo / f"{scale}x").mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, todo / f"{scale}x" / src.name)
+            buckets.setdefault(scale, []).append(src.name)
+    log(f"Images ready in {wd / 'raw'}")
+    if failed:
+        log(f"Failed assets: {sorted(failed)}  ->  python run.py redo {wd.name} <numbers>")
+    if buckets:
+        log("UPSCALE IN GIGAPIXEL (Wonder 3.5, cloud render, export PNG):")
+        for scale in sorted(buckets):
+            log(f"  {todo / f'{scale}x'}  ->  set scale {scale}x  ({', '.join(buckets[scale])})")
+        log(f"  Save the results into: {wd / 'upscaled'}")
+        log(f"  Then run: python run.py finish {wd.name}")
+    else:
+        log(f"Nothing needs upscaling. When happy: python run.py approve {wd.name}")
+    return failed
+
+
+def finish(name: str):
+    """Pick up Gigapixel results from Work\\<shirt>\\upscaled, trim to target DPI, move to final."""
+    import shutil
+
+    wd = config.WORK / name
+    plan = json.loads((wd / "plan.json").read_text(encoding="utf-8"))
+    by_n = {a["n"]: a for a in plan["assets"]}
+    final = wd / "final"
+    final.mkdir(parents=True, exist_ok=True)
+    done = set()
+    for f in sorted((wd / "upscaled").iterdir()):
+        if f.suffix.lower() not in upscaler.IMG_EXT or not f.name[:2].isdigit():
+            continue
+        a = by_n.get(int(f.name[:2]))
+        if not a:
+            continue
+        stem = f"{a['n']:02d}_{generator.slug(a['name'])}"
+        for old in final.glob(stem + ".*"):
+            old.unlink()
+        dest = final / (stem + f.suffix.lower())
+        shutil.copy2(f, dest)
+        upscaler.finish_file(dest, a, log, note=f"from Gigapixel ({f.name})")
+        done.add(stem)
+    waiting = [p.stem for p in (wd / "to_upscale").glob("*/*") if p.stem not in done]
+    if waiting:
+        log(f"Still missing from 'upscaled': {waiting}")
+    log(f"Review {final}. When happy: python run.py approve {name}")
 
 
 def redo(name: str, numbers):
@@ -154,6 +228,8 @@ if __name__ == "__main__":
             process(Path(a[1]), plan_only=(cmd == "plan-only"), hint=" ".join(a[2:]))
         elif cmd == "redo" and len(a) >= 3:
             redo(a[1], [int(x) for x in a[2:]])
+        elif cmd == "finish" and len(a) >= 2:
+            finish(a[1])
         elif cmd == "approve" and len(a) >= 2:
             approve(a[1])
         elif cmd == "probe-topaz":

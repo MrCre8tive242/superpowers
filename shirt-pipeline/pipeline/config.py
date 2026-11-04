@@ -41,6 +41,13 @@ ELEMENT_DPI = int(env("ELEMENT_DPI", "200"))
 DEFAULT_ELEMENT_INCHES = float(env("DEFAULT_ELEMENT_INCHES", "10"))
 MAX_UPSCALE_PASSES = int(env("MAX_UPSCALE_PASSES", "3"))
 
+# Upscale mode:
+#   manual = the script sorts files into Work\<shirt>\to_upscale\2x, 4x, 6x. You drag each folder into
+#            Gigapixel (Wonder 3.5, cloud render, that scale), export PNGs to Work\<shirt>\upscaled,
+#            then run: python run.py finish <shirt>
+#   cli    = the script runs Gigapixel itself (only if your version has a working command-line tool)
+UPSCALE_MODE = env("UPSCALE_MODE", "manual").lower()
+
 # Topaz Gigapixel (Windows). The command is a template; run `python run.py probe-topaz`
 # to see the real flags your version supports, then adjust GIGAPIXEL_ARGS.
 GIGAPIXEL_EXE = env("GIGAPIXEL_EXE", r"C:\Program Files\Topaz Labs LLC\Topaz Gigapixel\gigapixel.exe")

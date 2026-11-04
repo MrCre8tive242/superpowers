@@ -55,7 +55,7 @@ def _run_gigapixel(src: Path, dst_dir: Path) -> Path:
 
 def upscale_asset(src: Path, asset: dict, final_dir: Path, log=print) -> Path:
     final_dir.mkdir(parents=True, exist_ok=True)
-    dpi = config.BACKGROUND_DPI if asset.get("kind") == "background" else config.ELEMENT_DPI
+    dpi = target_dpi(asset)
     art = art_size(src)
     n = passes_needed(art, asset["print_inches"], dpi)
     target = final_dir / src.name
@@ -74,19 +74,41 @@ def upscale_asset(src: Path, asset: dict, final_dir: Path, log=print) -> Path:
     finally:
         for d in tmp_dirs:
             shutil.rmtree(d, ignore_errors=True)
-    new = art_size(final)
-    eff = max(new) / max(asset["print_inches"])
-    if eff > dpi * 1.15:  # overshot: shrink back to the target DPI to keep files manageable
-        factor = dpi / eff
-        with Image.open(final) as im:
-            im = im.resize((round(im.width * factor), round(im.height * factor)), Image.LANCZOS)
-            im.save(final)
-        new = art_size(final)
-        eff = max(new) / max(asset["print_inches"])
-    log(f"  {src.name}: {n} x 2x pass -> art {new[0]}x{new[1]}px (~{eff:.0f} DPI at print size)")
-    if final.suffix.lower() != ".png":
-        log(f"  WARNING: Gigapixel saved {final.suffix}, transparency may be lost. Set PNG output in GIGAPIXEL_ARGS.")
+    finish_file(final, asset, log, note=f"{n} x 2x pass")
     return final
+
+
+def target_dpi(asset) -> int:
+    return config.BACKGROUND_DPI if asset.get("kind") == "background" else config.ELEMENT_DPI
+
+
+def finish_file(path: Path, asset: dict, log=print, note="upscaled", trim=True):
+    """Trim any overshoot back to the target DPI and report the result."""
+    dpi = target_dpi(asset)
+    new = art_size(path)
+    eff = max(new) / max(asset["print_inches"])
+    if trim and eff > dpi * 1.15:  # overshot: shrink back to the target DPI to keep files manageable
+        factor = dpi / eff
+        with Image.open(path) as im:
+            im = im.resize((round(im.width * factor), round(im.height * factor)), Image.LANCZOS)
+            im.save(path)
+        new = art_size(path)
+        eff = max(new) / max(asset["print_inches"])
+    flag = "" if eff >= dpi * 0.9 else f"  <-- LOW, target is {dpi}"
+    log(f"  {path.name}: {note} -> art {new[0]}x{new[1]}px (~{eff:.0f} DPI at print size){flag}")
+    if path.suffix.lower() not in (".png", ".tif", ".tiff", ".webp"):
+        log(f"  WARNING: {path.name} is {path.suffix}, transparency is lost. Export PNG from Gigapixel.")
+
+
+def manual_bucket(src: Path, asset: dict):
+    """For the drag-and-drop mode: which Gigapixel scale this file needs (None = no upscale)."""
+    need = max(asset["print_inches"]) * target_dpi(asset) / max(1, max(art_size(src)))
+    if need <= 1:
+        return None
+    for scale in (2, 4, 6):
+        if need <= scale:
+            return scale
+    return 6
 
 
 def probe():
@@ -106,3 +128,6 @@ def probe():
         print(f"=== {exe.name} {flag} (exit {out.returncode}) ===\n{text.strip() or '(no output)'}\n")
         if text.strip():
             break
+    print("Other programs in", exe.parent, "(a separate command-line tool would be one of these):")
+    for p in sorted(exe.parent.glob("*.exe")):
+        print("  ", p.name)

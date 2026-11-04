@@ -33,6 +33,22 @@ For `watch` mode, save the correction as a text file with the same name as the m
 3. **Prompts**: one call per asset, so each prompt describes only that asset. Words your rules ban
    (extract, isolate, mask, verify...) are replaced automatically.
 
+## Upscaling with Gigapixel (default: drag-and-drop mode)
+
+Your Gigapixel (1.4.0) is the desktop app and has no command-line mode, so by default the script
+prepares everything and you do one drag-and-drop:
+
+1. After `process`, the script puts files that need upscaling in `Work\<shirt>\to_upscale\2x`, `4x`, `6x`
+   (files that need none go straight to `final`). The log prints the exact folders.
+2. In Gigapixel: drag in the `2x` folder, choose **Wonder 3.5**, **cloud render**, scale **2x**, output **PNG**,
+   export to `Work\<shirt>\upscaled`. Repeat for `4x` and `6x` if they exist.
+   Gigapixel's own file-name endings (like `-gigapixel-wonder-2x`) are fine.
+3. `python run.py finish <shirt>` picks them up, trims any overshoot to your DPI, and puts them in `final`.
+4. Review `final`, then `python run.py approve <shirt>`.
+
+If Topaz ever gives you a working command-line tool, set `UPSCALE_MODE=cli` in `.env` and the script
+will run it automatically.
+
 ## Upscale rules (change in `.env`)
 
 - Background: `BACKGROUND_DPI=150` at its print size. Elements: `ELEMENT_DPI=200`.
