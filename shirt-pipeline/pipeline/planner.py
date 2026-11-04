@@ -34,6 +34,10 @@ Then build "inventory" following the rules' numbering order. Splitting rules:
 - Lettering groups in different places are separate assets. Attached flourishes stay with their lettering.
 - Each sleeve graphic that differs from the body is its own asset.
 - Only keep things together when they are one inseparable crest or emblem.
+- SCENERY IS BACKGROUND, NOT AN ASSET: sky, aurora, stars, clouds, mountains, hills, forests and trees, waterfalls,
+  water, snow ground, textures, patterns, gradients, splatter, and scattered snowflakes or sparkles all stay inside
+  the clean background file. Only list a tree, flower or similar as its own asset when it is a single distinct
+  object placed on top of the design (like a badge), not part of the scene.
 - The clean background file(s) are LAST. 3D = one background per printed side shown; cut and sew = 4 pieces.
 Return JSON:
 {"mode": "3D short sleeve | 3D long sleeve | cut and sew short sleeve | cut and sew long sleeve",
@@ -50,7 +54,9 @@ Backgrounds: use the sizes in the rules.
 REVIEW = """
 TASK: review this inventory against the mockup and the objects list. If any asset bundles more than one
 separate object (for example "owl, moose and snowman" or "leopards with a snowman"), split it into separate
-assets. Add any visible object that is missing. Fix wrong species or misspelled text. Do not merge anything.
+assets. Add any distinct object (animal, character, prop, lettering) that is missing. Never add scenery: sky,
+aurora, mountains, trees, waterfalls, textures, patterns and scattered snowflakes belong inside the background file.
+Fix wrong species or misspelled text. Do not merge anything.
 In 3D mode the sleeves are part of each side's background: there is never a separate sleeve background, only one
 background per printed side (front, and back if the back is shown). Renumber in the rules' order with the background(s) last. Return JSON: {"inventory": [ ...same entry shape... ]}
 """
@@ -82,6 +88,15 @@ BANNED = {
     r"\bdimensions\b": "size",
     r"\baudit\b": "look over",
 }
+
+
+SCENERY = re.compile(
+    r"(aurora|sky|stars?$|starfield|cloud|mountain|hill|forest|pine|trees?(_|$)|waterfall|_falls|ice_falls|water|"
+    r"snow_?ground|landscape|scenery|texture|pattern|gradient|splatter|overlay|scattered|sparkle|snowflakes(_|$))"
+)
+
+
+OBJECT_WORDS = re.compile(r"(badge|logo|emblem|crest|icon|patch|seal|lettering|text|title|name)")
 
 
 def _data_url(path: Path) -> str:
@@ -142,6 +157,17 @@ def plan(mockup: Path, hint: str = "", log=print) -> dict:
     # keep elements first, backgrounds last, then renumber
     inventory = [e for e in inventory if not str(e.get("kind", "")).lower().startswith("back")] + \
                 [e for e in inventory if str(e.get("kind", "")).lower().startswith("back")]
+    # Scenery belongs inside the background, never its own layer (guard against over-splitting).
+    kept = []
+    for e in inventory:
+        name = str(e.get("name", "")).lower()
+        if (not str(e.get("kind", "")).lower().startswith("back") and SCENERY.search(name)
+                and not OBJECT_WORDS.search(name)):
+            log(f"Kept '{e.get('name')}' inside the background (scenery is not a separate layer)")
+        else:
+            kept.append(e)
+    if any(str(e.get("kind", "")).lower().startswith("back") for e in kept):
+        inventory = kept
     mode = survey.get("mode", "3D short sleeve")
     if "3d" in mode.lower():  # 3D: sleeves belong to each side's background, never their own file
         bgs = [e for e in inventory if str(e.get("kind", "")).lower().startswith("back")]
