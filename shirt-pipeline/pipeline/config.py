@@ -39,6 +39,8 @@ IMAGE_INPUT_FIDELITY = env("IMAGE_INPUT_FIDELITY", "high")
 BACKGROUND_DPI = int(env("BACKGROUND_DPI", "150"))
 ELEMENT_DPI = int(env("ELEMENT_DPI", "200"))
 DEFAULT_ELEMENT_INCHES = float(env("DEFAULT_ELEMENT_INCHES", "10"))
+# Elements are sized at least this big (longest side) so they stay sharp if you print them larger.
+MIN_ELEMENT_INCHES = float(env("MIN_ELEMENT_INCHES", "8"))
 MAX_UPSCALE_PASSES = int(env("MAX_UPSCALE_PASSES", "3"))
 
 # Upscale mode:

@@ -51,7 +51,8 @@ REVIEW = """
 TASK: review this inventory against the mockup and the objects list. If any asset bundles more than one
 separate object (for example "owl, moose and snowman" or "leopards with a snowman"), split it into separate
 assets. Add any visible object that is missing. Fix wrong species or misspelled text. Do not merge anything.
-Renumber in the rules' order with the background(s) last. Return JSON: {"inventory": [ ...same entry shape... ]}
+In 3D mode the sleeves are part of each side's background: there is never a separate sleeve background, only one
+background per printed side (front, and back if the back is shown). Renumber in the rules' order with the background(s) last. Return JSON: {"inventory": [ ...same entry shape... ]}
 """
 
 ONE_PROMPT = """
@@ -141,13 +142,25 @@ def plan(mockup: Path, hint: str = "", log=print) -> dict:
     # keep elements first, backgrounds last, then renumber
     inventory = [e for e in inventory if not str(e.get("kind", "")).lower().startswith("back")] + \
                 [e for e in inventory if str(e.get("kind", "")).lower().startswith("back")]
+    mode = survey.get("mode", "3D short sleeve")
+    if "3d" in mode.lower():  # 3D: sleeves belong to each side's background, never their own file
+        bgs = [e for e in inventory if str(e.get("kind", "")).lower().startswith("back")]
+        sleeve_bgs = [e for e in bgs if "sleeve" in (str(e.get("name", "")) + " " + str(e.get("what", ""))).lower()
+                      and not any(w in str(e.get("name", "")).lower() for w in ("front", "back_", "rear"))]
+        if len(sleeve_bgs) < len(bgs):
+            inventory = [e for e in inventory if e not in sleeve_bgs]
+            for e in sleeve_bgs:
+                log(f"Dropped '{e.get('name')}': in 3D mode the sleeves are part of the main background")
     inventory = [_norm_entry(e, i) for i, e in enumerate(inventory, 1)]
+    for e in inventory:  # never plan an element smaller than you might print it
+        if e["kind"] == "element" and max(e["print_inches"]) < config.MIN_ELEMENT_INCHES:
+            k = config.MIN_ELEMENT_INCHES / max(e["print_inches"])
+            e["print_inches"] = [round(v * k, 1) for v in e["print_inches"]]
     if not inventory:
         raise RuntimeError("Planner found no assets")
 
     # 3. one prompt per asset, in parallel
     listing = "\n".join(f"{e['n']}. {e['name']}: {e['what']}" for e in inventory)
-    mode = survey.get("mode", "3D short sleeve")
 
     def write(e):
         task = (ONE_PROMPT + f"\nPRODUCT MODE: {mode}\nALL ASSETS (for context only):\n{listing}\n\n"
