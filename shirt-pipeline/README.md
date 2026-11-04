@@ -4,7 +4,7 @@ Drop in a shirt mockup. It plans the layers with your extraction rules, makes ea
 against the mockup and redoes the bad ones**, packages them in `Ready\<shirt name>\`, uploads to Google Drive,
 and emails you the share link with a preview sheet. Nothing to click unless something needs a look.
 
-Full setup steps: see **Setup-Guide.pdf**.
+Full setup steps: see **Setup-Guide.pdf**. How the whole workflow fits together: see **WORKFLOW.md**.
 
 ## Everyday use
 
