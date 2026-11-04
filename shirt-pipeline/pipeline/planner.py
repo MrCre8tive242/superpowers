@@ -14,7 +14,7 @@ from pathlib import Path
 
 from openai import OpenAI
 
-from . import config
+from . import config, modes
 
 AUTOMATION = """
 AUTOMATION OVERRIDE (replaces the reply format, the batching and the "wait for continue" parts of the rules):
@@ -38,10 +38,11 @@ Then build "inventory" following the rules' numbering order. Splitting rules:
   water, snow ground, textures, patterns, gradients, splatter, and scattered snowflakes or sparkles all stay inside
   the clean background file. Only list a tree, flower or similar as its own asset when it is a single distinct
   object placed on top of the design (like a badge), not part of the scene.
-- The clean background file(s) are LAST. 3D = one background per printed side shown; cut and sew = 4 pieces.
+- The clean background file(s) are LAST. 3D = one background per printed side shown. Cut and sew = you list NO
+  background entries (the script adds the four pieces).
 Return JSON:
-{"mode": "3D short sleeve | 3D long sleeve | cut and sew short sleeve | cut and sew long sleeve",
- "assumed_mode": true/false,
+{"back_shown": true/false (is the back of the shirt visible in the mockup?),
+ "background_art": "what the clean background looks like with every element removed: colors, textures, motifs, flow",
  "notes": ["short practical notes for the user, per the rules"],
  "objects_seen": ["..."],
  "inventory": [{"n": 1, "name": "short_slug", "kind": "element|background",
@@ -58,7 +59,7 @@ assets. Add any distinct object (animal, character, prop, lettering) that is mis
 aurora, mountains, trees, waterfalls, textures, patterns and scattered snowflakes belong inside the background file.
 Fix wrong species or misspelled text. Do not merge anything.
 In 3D mode the sleeves are part of each side's background: there is never a separate sleeve background, only one
-background per printed side (front, and back if the back is shown). Renumber in the rules' order with the background(s) last. Return JSON: {"inventory": [ ...same entry shape... ]}
+background per printed side (front, and back if the back is shown). In cut and sew mode, list no backgrounds at all. Renumber in the rules' order with the background(s) last. Return JSON: {"inventory": [ ...same entry shape... ]}
 """
 
 ONE_PROMPT = """
@@ -144,13 +145,19 @@ def plan(mockup: Path, hint: str = "", log=print) -> dict:
         )
         return json.loads(resp.choices[0].message.content)
 
+    # 0. decide the extraction style (3D all-over vs cut and sew) from the hint and the mockup
+    detected = ask(modes.DETECT)
+    mode, style, sleeve, mode_reason = modes.decide_mode(hint, detected)
+    log(f"Mode: {mode}  <- {mode_reason}")
+    mode_text = modes.decided_text(mode, style)
+
     # 1. survey
-    survey = ask(SURVEY)
+    survey = ask(SURVEY + mode_text)
     inventory = survey.get("inventory", [])
     log(f"Survey found {len(inventory)} assets from {len(survey.get('objects_seen', []))} objects")
 
     # 2. review / split
-    reviewed = ask(REVIEW + "\nOBJECTS SEEN:\n" + json.dumps(survey.get("objects_seen", []))
+    reviewed = ask(REVIEW + mode_text + "\nOBJECTS SEEN:\n" + json.dumps(survey.get("objects_seen", []))
                    + "\nINVENTORY:\n" + json.dumps(inventory, indent=1)).get("inventory")
     if reviewed and len(reviewed) >= len(inventory):  # a review may only split, never merge
         inventory = reviewed
@@ -166,10 +173,18 @@ def plan(mockup: Path, hint: str = "", log=print) -> dict:
             log(f"Kept '{e.get('name')}' inside the background (scenery is not a separate layer)")
         else:
             kept.append(e)
-    if any(str(e.get("kind", "")).lower().startswith("back") for e in kept):
+    if style == "cut and sew" or any(str(e.get("kind", "")).lower().startswith("back") for e in kept):
         inventory = kept
-    mode = survey.get("mode", "3D short sleeve")
-    if "3d" in mode.lower():  # 3D: sleeves belong to each side's background, never their own file
+    notes = list(survey.get("notes", []))
+    if style == "cut and sew":
+        # The rules require four separate background pieces. Build them deterministically.
+        inventory = [e for e in inventory if not str(e.get("kind", "")).lower().startswith("back")]
+        inventory += modes.cut_and_sew_backgrounds(sleeve, survey.get("background_art", ""),
+                                                   bool(survey.get("back_shown")))
+        if not config.PATTERN_REFERENCE.exists():
+            notes.append(f"Cut and sew pieces are drawn from the size descriptions only. For better shapes, add "
+                         f"your pattern diagram at {config.PATTERN_REFERENCE}")
+    elif style == "3D":  # 3D: sleeves belong to each side's background, never their own file
         bgs = [e for e in inventory if str(e.get("kind", "")).lower().startswith("back")]
         sleeve_bgs = [e for e in bgs if "sleeve" in (str(e.get("name", "")) + " " + str(e.get("what", ""))).lower()
                       and not any(w in str(e.get("name", "")).lower() for w in ("front", "back_", "rear"))]
@@ -203,8 +218,10 @@ def plan(mockup: Path, hint: str = "", log=print) -> dict:
 
     return {
         "mode": mode,
-        "assumed_mode": survey.get("assumed_mode", False),
-        "notes": survey.get("notes", []),
+        "mode_reason": mode_reason,
+        "assumed_mode": False,
+        "detected": detected,
+        "notes": notes,
         "objects_seen": survey.get("objects_seen", []),
         "hint": hint,
         "assets": assets,

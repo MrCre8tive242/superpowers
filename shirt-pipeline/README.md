@@ -37,6 +37,23 @@ GMAIL_APP_PASSWORD=xxxx xxxx xxxx xxxx
 The app password comes from myaccount.google.com > Security > 2-Step Verification > App passwords
 (2-Step Verification must be on). Never use your normal Gmail password here.
 
+## Extraction style (3D vs cut and sew) is chosen automatically
+
+The script looks at the mockup and decides, in this order:
+1. **Your hint wins.** "3D", "all-over" or "sublimation" = 3D (one flat shirt-shaped background).
+   "cut and sew", "panels" or "pattern pieces" = cut and sew (four separate background files).
+   "long sleeve" / "short sleeve" overrides the sleeve length it sees.
+2. **Long sleeve = cut and sew** (your standing rule, `LONG_SLEEVE_STYLE=cut and sew` in `.env`).
+3. **Short sleeve = 3D**, unless the mockup shows panel construction (seams, contrasting collar or side panels),
+   then cut and sew (`SHORT_SLEEVE_STYLE=auto`).
+
+The log says what it chose and why. If it's wrong, add the style to the hint. Don't write "3D" in a hint for a
+shirt that should be cut and sew.
+
+**Cut and sew gives four background files**, sized from your rules: front body 22 x 28 in, back body 22 x 28 in,
+left sleeve and right sleeve (long: 17 x 25 in, short: 17 x 9 in). Your pattern diagram is sent with each piece.
+Put it at `rules\LONG_SLEEVE_PATTERN_REFERENCE.png` (the log warns you if it's missing).
+
 ## Corrections (hints)
 
 If the planner misreads something, add a correction after the file name:

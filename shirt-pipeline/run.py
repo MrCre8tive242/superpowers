@@ -35,7 +35,10 @@ def read_hint(mockup: Path, hint: str) -> str:
 
 
 def show_plan(plan):
-    log(f"Mode: {plan['mode']}{' (assumed)' if plan.get('assumed_mode') else ''}  Assets: {len(plan['assets'])}")
+    log(f"Mode: {plan['mode']}  Assets: {len(plan['assets'])}")
+    if plan.get("mode_reason"):
+        log(f"  mode chosen because: {plan['mode_reason']}")
+        log("  (wrong? add \"3D\" or \"cut and sew\" to the hint)")
     for a in plan["assets"]:
         w, h = a["print_inches"]
         log(f"  {a['n']:02d} {a['name']} [{a['kind']}, {w:g}x{h:g} in] {a.get('what', '')}")

@@ -69,6 +69,13 @@ GOOGLE_CREDENTIALS = Path(env("GOOGLE_CREDENTIALS", ROOT / "credentials.json"))
 GOOGLE_TOKEN = Path(env("GOOGLE_TOKEN", ROOT / "token.json"))
 DRIVE_PARENT_FOLDER_ID = env("DRIVE_PARENT_FOLDER_ID", "")  # optional
 
+# Extraction style policy. "auto" = decide from what the mockup shows.
+#   LONG_SLEEVE_STYLE:  "cut and sew" (default: four separate pieces) | "3d" | "auto"
+#   SHORT_SLEEVE_STYLE: "auto" (default: 3D unless the mockup shows panel construction) | "3d" | "cut and sew"
+# Whatever you write in the hint ("3D", "cut and sew", ...) always wins over this.
+LONG_SLEEVE_STYLE = env("LONG_SLEEVE_STYLE", "cut and sew").lower()
+SHORT_SLEEVE_STYLE = env("SHORT_SLEEVE_STYLE", "auto").lower()
+
 # Alerts when a shirt is ready
 OPEN_FOLDER = env("OPEN_FOLDER", "1") == "1"          # open the Ready folder in File Explorer
 NOTIFY_EMAIL_TO = env("NOTIFY_EMAIL_TO", "")          # optional: email address to alert
