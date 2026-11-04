@@ -28,7 +28,12 @@ You are feeding a script, not a chat. Return ONLY valid JSON, no prose, in this 
 Each asset's "prompt" must be fully self-contained because it is sent to the image model on its own with the
 mockup attached: include the opening sentence, the PRODUCT line, the exact text/colors/shapes for this asset,
 the RULES, the LOOK CLOSELY AT list and the IF YOU CANNOT MATCH sentence from the rules. Describe ONLY this asset.
-Do not write "wait for continue". Keep every banned word out of the prompts exactly as the rules require.
+Do not write "wait for continue".
+IMPORTANT: the "3 or 4 assets per message" limit does NOT apply here. The script does its own batching, so
+list EVERY asset from your full inventory in this one JSON (all lettering, the focal graphic, every supporting
+element, every sleeve element, edge decorations, and the clean background file(s) last). Never stop at 3 and
+never write "continue with the rest" or "Batch 2" in the notes: return the complete list now.
+Keep every banned word out of the prompts exactly as the rules require.
 print_inches: realistic printed size of the asset on the garment (background per the rules' sizes; elements
 default to about 10 inches on the longest side unless clearly smaller or larger). Background assets go LAST.
 """
