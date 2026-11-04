@@ -30,6 +30,9 @@ def process(mockup: Path, plan_only=False, hint=""):
     plan = planner.plan(mockup, hint)
     (wd / "plan.json").write_text(json.dumps(plan, indent=2), encoding="utf-8")
     log(f"Mode: {plan.get('mode')}  Assets: {len(plan['assets'])}")
+    log(f"Pass 1 inventory ({len(plan.get('inventory', []))}): "
+        + "; ".join(i.get("name", "?") for i in plan.get("inventory", [])))
+    log("Assets planned: " + "; ".join(a["name"] for a in plan["assets"]))
     for note in plan.get("notes", []):
         log(f"NOTE: {note}")
     if plan_only:

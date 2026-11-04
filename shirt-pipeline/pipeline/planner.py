@@ -95,6 +95,7 @@ def plan(mockup: Path, hint: str = "") -> dict:
         + json.dumps(inventory, indent=1)
     )
     data = ask(rules + "\n\n" + OVERRIDE, forced)
+    data["inventory"] = inventory  # kept in plan.json so we can see what pass 1 found
     assets = data.get("assets", [])
     if not assets:
         raise RuntimeError("Planner returned no assets")
