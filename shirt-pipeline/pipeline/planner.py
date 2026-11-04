@@ -5,16 +5,12 @@ Three stages, so assets cannot be merged by accident:
   2. review   - a second look that splits any asset still bundling separate objects
   3. prompts  - one call PER asset, each writing a prompt for that single asset only
 """
-import base64
 import json
-import mimetypes
 import re
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from openai import OpenAI
-
-from . import config, modes
+from . import config, llm, modes
 
 AUTOMATION = """
 AUTOMATION OVERRIDE (replaces the reply format, the batching and the "wait for continue" parts of the rules):
@@ -47,6 +43,8 @@ Return JSON:
  "objects_seen": ["..."],
  "inventory": [{"n": 1, "name": "short_slug", "kind": "element|background",
                 "what": "exactly what this one asset contains and where it sits",
+                "text": "the EXACT words, numbers and punctuation in this asset, letter for letter, or empty if none",
+                "hard": true for lettering and for the main focal graphic (the hardest to redraw faithfully), else false,
                 "print_inches": [width, height]}]}
 print_inches = realistic printed size. Elements: about 10 in on the longest side unless clearly smaller or larger.
 Backgrounds: use the sizes in the rules.
@@ -100,11 +98,6 @@ SCENERY = re.compile(
 OBJECT_WORDS = re.compile(r"(badge|logo|emblem|crest|icon|patch|seal|lettering|text|title|name)")
 
 
-def _data_url(path: Path) -> str:
-    mime = mimetypes.guess_type(path.name)[0] or "image/png"
-    return f"data:{mime};base64," + base64.b64encode(path.read_bytes()).decode()
-
-
 def clean_prompt(text: str) -> str:
     for pat, rep in BANNED.items():
         text = re.sub(pat, rep, text, flags=re.IGNORECASE)
@@ -121,29 +114,20 @@ def _norm_entry(e: dict, i: int) -> dict:
         inches = [config.DEFAULT_ELEMENT_INCHES] * 2
     name = re.sub(r"[^a-z0-9]+", "_", str(e.get("name") or f"asset_{i}").lower()).strip("_")
     return {"n": i, "name": name or f"asset_{i}", "kind": kind,
-            "what": e.get("what", ""), "print_inches": inches}
+            "what": e.get("what", ""), "text": str(e.get("text") or "").strip(),
+            "hard": bool(e.get("hard")) or bool(str(e.get("text") or "").strip()),
+            "print_inches": inches}
 
 
 def plan(mockup: Path, hint: str = "", log=print) -> dict:
     rules = config.RULES_FILE.read_text(encoding="utf-8")
     system = rules + "\n\n" + AUTOMATION
     correction = f"\nCORRECTION FROM THE USER: {hint}" if hint else ""
-    client = OpenAI()
-    image_url = _data_url(mockup)
+    llm.check_ready(config.PLANNER_PROVIDER)
 
     def ask(task: str) -> dict:
-        resp = client.chat.completions.create(
-            model=config.PLANNER_MODEL,
-            response_format={"type": "json_object"},
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": [
-                    {"type": "text", "text": "extraction" + correction + "\n\n" + task},
-                    {"type": "image_url", "image_url": {"url": image_url}},
-                ]},
-            ],
-        )
-        return json.loads(resp.choices[0].message.content)
+        return llm.ask_json(config.PLANNER_PROVIDER, config.PLANNER_MODEL, system,
+                            "extraction" + correction + "\n\n" + task, images=[mockup])
 
     # 0. decide the extraction style (3D all-over vs cut and sew) from the hint and the mockup
     detected = ask(modes.DETECT)

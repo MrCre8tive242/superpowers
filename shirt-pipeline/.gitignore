@@ -3,4 +3,6 @@ credentials.json
 token.json
 Work/
 Inbox/
+Ready/
 __pycache__/
+*.log

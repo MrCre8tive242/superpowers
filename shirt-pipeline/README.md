@@ -1,101 +1,74 @@
 # Shirt extraction pipeline (Windows)
 
-Drop a mockup into `Inbox\`. The script plans the layers using `rules\extraction_rules.md`,
-generates each layer as a transparent PNG (3 at a time), upscales only what needs it in Topaz
-Gigapixel, then waits for your OK before uploading to Google Drive and giving you a share link.
+Drop in a shirt mockup. It plans the layers with your extraction rules, makes each layer, **checks every layer
+against the mockup and redoes the bad ones**, packages them in `Ready\<shirt name>\`, uploads to Google Drive,
+and emails you the share link with a preview sheet. Nothing to click unless something needs a look.
 
-## Daily flow
+Full setup steps: see **Setup-Guide.pdf**.
 
-1. `python run.py process "Inbox\roots shirt.jpg"` (or leave `python run.py watch` running and drop mockups in `Inbox\`).
-2. The script plans the layers, generates them, and puts them in **`Ready\roots shirt\`**.
-   You get a Windows pop-up, the folder opens, and (optionally) an email. The alert lists which files
-   are below about 150 DPI at print size, so you know what to upscale.
-3. Upscale what you want in Gigapixel and save it into the same folder. Overwrite the original, or keep both:
-   when two files share the same number (e.g. `02_...png` and `02_...-gigapixel-2x.png`), the newest one is uploaded.
-4. `python run.py approve "roots shirt"` uploads the folder to Google Drive as "roots shirt", sets it to
-   "anyone with the link", prints the link, saves it as `DRIVE LINK.txt` in the folder and in `Work\links.csv`.
+## Everyday use
 
-## Commands (run in Command Prompt inside the shirt-pipeline folder)
+One program does everything: **`python run.py serve`** (or let Windows start it for you:
+`python run.py install-autostart`). Then use either door:
+
+- **The web page**: http://localhost:8765 (a desktop shortcut is created). Drag a mockup in. Pick a style or leave it on Auto.
+- **The Inbox folder**: drop the mockup in `Inbox\` (point `INBOX_DIR` at a Google Drive folder and you can upload from your phone).
+
+Shirt name = the file name. Add corrections after ` -- ` in the file name: `roots shirt -- the animal on the left is a moose.jpg`.
+
+## What happens to each shirt
+
+1. **Style is chosen from the mockup** (3D all-over vs cut and sew). Long sleeve = cut and sew (four background pieces:
+   front body, back body, left sleeve, right sleeve). The log says why. Your notes override ("3D", "cut and sew").
+2. **Planning** (Claude or GPT, your choice): lists every layer, exact lettering, sizes. Scenery stays in the background.
+3. **Making + checking**: each layer is generated, then a vision model compares it with the mockup (spelling, missing
+   parts, stray elements, backdrop, edges). Failed layers are redone with the checker's feedback (up to 2 times).
+   Lettering and the main graphic are made twice and the better one is kept. Cut and sew pieces match the front body piece.
+4. **Packaging**: files go to `Ready\<shirt>`; a preview sheet is built (green = ok, amber = check edges, red = needs a look).
+5. **Hands-off**: uploads to Drive, shares the link, emails you the link + preview + a list of anything that needs a look
+   and which layers are below the print target and may need an upscale.
+
+## Your part: review, upscale, swap
+
+Upscale what you want in Gigapixel and save it into the same `Ready\<shirt>` folder (overwrite, or keep both: the newest
+file per number wins). Then click **Update Drive with my changes** on the web page (or `python run.py approve "<shirt>"`).
+The Drive link stays the same.
+
+## Commands
 
 | Command | What it does |
 |---|---|
-| `python run.py plan-only "Inbox\shirt.jpg" "hint"` | Plans the layers only (a few cents). |
-| `python run.py process "Inbox\shirt.jpg" "hint"` | Plan, generate, package into `Ready\shirt`, alert you. |
-| `python run.py redo "shirt" 3 5` | Regenerates assets 3 and 5 only and replaces them in the Ready folder. |
-| `python run.py approve "shirt"` | Uploads `Ready\shirt` to Drive, prints the share link. |
-| `python run.py watch` | Leave running: every mockup dropped in `Inbox\` gets processed. |
-| `python run.py models` | Lists the OpenAI models your account can use. |
+| `python run.py serve` | Inbox watcher + web page (the normal way to run it) |
+| `python run.py process "Inbox\x.jpg" [notes]` | One mockup right now |
+| `python run.py plan-only "Inbox\x.jpg" [notes]` | Just the plan, no images (cheap) |
+| `python run.py redo "x" 3 5` | Remake layers 3 and 5 (same Drive link) |
+| `python run.py approve "x"` | Upload or update Drive, email the link |
+| `python run.py models` | Lists the OpenAI models your account can use |
+| `python run.py test-email` | Sends yourself a test email |
+| `python run.py install-autostart` | Start by itself at Windows login |
 
-## Email alert (optional)
+## Settings
 
-Add to `.env`:
-```
-NOTIFY_EMAIL_TO=Cre8tiveminds242@gmail.com
-GMAIL_ADDRESS=Cre8tiveminds242@gmail.com
-GMAIL_APP_PASSWORD=xxxx xxxx xxxx xxxx
-```
-The app password comes from myaccount.google.com > Security > 2-Step Verification > App passwords
-(2-Step Verification must be on). Never use your normal Gmail password here.
+Copy `.env.example` to `.env`. Everything has a default except the keys. The most useful ones:
+`PLANNER_PROVIDER` / `PLANNER_MODEL` (claude or openai), `IMAGE_MODEL`, `AUTO_APPROVE` (0 = wait for your approval),
+`BEST_OF_HARD` (1 = cheaper), `QA_MAX_RETRIES`, `LONG_SLEEVE_STYLE`, `INBOX_DIR`.
+Add `--review` to the notes of one shirt to hold just that one for approval.
 
-## Extraction style (3D vs cut and sew) is chosen automatically
+## Phone access
 
-The script looks at the mockup and decides, in this order:
-1. **Your hint wins.** "3D", "all-over" or "sublimation" = 3D (one flat shirt-shaped background).
-   "cut and sew", "panels" or "pattern pieces" = cut and sew (four separate background files).
-   "long sleeve" / "short sleeve" overrides the sleeve length it sees.
-2. **Long sleeve = cut and sew** (your standing rule, `LONG_SLEEVE_STYLE=cut and sew` in `.env`).
-3. **Short sleeve = 3D**, unless the mockup shows panel construction (seams, contrasting collar or side panels),
-   then cut and sew (`SHORT_SLEEVE_STYLE=auto`).
+- **Easiest:** upload the mockup to the Drive folder that `INBOX_DIR` points to. Your PC must be on. The email arrives with the link.
+- **The web page from your phone:** install Tailscale (free) on the PC and phone, set `WEB_HOST=0.0.0.0` and a `WEB_PASSWORD`,
+  and open `http://<pc-tailscale-name>:8765`. Never expose the page to the open internet without a password.
 
-The log says what it chose and why. If it's wrong, add the style to the hint. Don't write "3D" in a hint for a
-shirt that should be cut and sew.
+## Where things are
 
-**Cut and sew gives four background files**, sized from your rules: front body 22 x 28 in, back body 22 x 28 in,
-left sleeve and right sleeve (long: 17 x 25 in, short: 17 x 9 in). Your pattern diagram is sent with each piece.
-Put it at `rules\LONG_SLEEVE_PATTERN_REFERENCE.png` (the log warns you if it's missing).
-
-## Corrections (hints)
-
-If the planner misreads something, add a correction after the file name:
-```
-python run.py plan-only "Inbox\winter.jpg" "The animal on the left is a moose. CRUSADERS is on the wearer's left sleeve."
-```
-For `watch` mode, save the correction as a text file with the same name as the mockup (`Inbox\winter.txt`).
-
-## How planning works
-
-1. **Survey**: lists every object on the shirt, then groups them into numbered assets.
-2. **Review**: a second look that splits anything still bundled (e.g. "owl, moose and snowman").
-3. **Prompts**: one call per asset, so each prompt describes only that asset. Words your rules ban
-   (extract, isolate, mask, verify...) are replaced automatically.
-
-## Automatic upscaling (optional, off by default)
-
-`UPSCALE_MODE=off` (default) skips upscaling; you do it during review. `UPSCALE_MODE=manual` sorts files into
-`Work\<shirt>\to_upscale\2x/4x/6x` for a Gigapixel drag-and-drop and `python run.py finish <shirt>`
-collects them. `UPSCALE_MODE=cli` only works with a Gigapixel version that has a command-line tool.
-
-## Other settings (`.env`)
-
-```
-OPENAI_API_KEY=sk-...
-GIGAPIXEL_EXE=C:\Program Files\Topaz Labs LLC\Topaz Gigapixel\gigapixel.exe
-PLANNER_MODEL=gpt-5.6-terra  # vision model that plans the layers
-IMAGE_MODEL=gpt-image-2.5-sunburst
-IMAGE_QUALITY=high           # low | medium | high
-IMAGE_INPUT_FIDELITY=high    # sticks closer to the mockup; leave empty to turn off
-DRIVE_PARENT_FOLDER_ID=      # optional: Drive folder ID to put every shirt folder inside
-```
-
-## Google Drive
-
-`credentials.json` (Desktop app OAuth client) goes in this folder. The first `approve` opens a
-browser to sign in. In Testing mode Google expires the sign-in after 7 days: if upload fails with
-an auth error, delete `token.json` and approve again.
+`Ready\<shirt>` the print files and Drive link · `Work\<shirt>` plan, quality results, preview sheet, rejected attempts ·
+`Work\log.csv` one row per shirt (date, style, images made, estimated cost, link) · `Work\pipeline.log` when it runs hidden ·
+`Inbox\Done` and `Inbox\Failed` the mockups after they run.
 
 ## Known limits
 
-- Each layer is generated separately, so it can drift slightly from the mockup. That is what the review step is for.
-- Image API refusals (e.g. look-alikes of known mascots) are reported per asset; fix the prompt in
-  `Work\<shirt>\plan.json` and use `redo`.
+- The quality check is another AI. It catches most spelling and stray-element mistakes but not everything. Glance at the preview sheet.
 - Real customer photos and client logos are placed by hand, per your rules.
+- The image API may refuse some look-alikes of known mascots; the layer is flagged and you can adjust it and use Redo.
+- The pipeline only runs while the PC is on and the program is running.

@@ -1,4 +1,6 @@
 openai>=1.60
+anthropic>=0.40
+flask>=3.0
 pillow
 google-api-python-client
 google-auth-oauthlib

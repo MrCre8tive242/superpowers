@@ -29,7 +29,18 @@ RULES_FILE = Path(env("RULES_FILE", ROOT / "rules" / "extraction_rules.md"))
 # Optional: the cut-and-sew pattern diagram referenced in the rules.
 PATTERN_REFERENCE = Path(env("PATTERN_REFERENCE", ROOT / "rules" / "LONG_SLEEVE_PATTERN_REFERENCE.png"))
 
-PLANNER_MODEL = env("PLANNER_MODEL", "gpt-4.1")      # vision model that reads the mockup
+# Who reads the mockup and writes the prompts: "claude" or "openai". Images are always made by OpenAI.
+PLANNER_PROVIDER = env("PLANNER_PROVIDER", "openai").lower()
+PLANNER_MODEL = env("PLANNER_MODEL", "gpt-4.1")      # e.g. claude-sonnet-5-5 / claude-opus-5-5 / gpt-5.6-terra
+ANTHROPIC_API_KEY = env("ANTHROPIC_API_KEY", "")
+# Quality check (looks at every generated layer next to the mockup). Defaults to the planner's provider/model.
+QA_ENABLED = env("QA_ENABLED", "1") == "1"
+QA_PROVIDER = env("QA_PROVIDER", "").lower() or PLANNER_PROVIDER
+QA_MODEL = env("QA_MODEL", "") or PLANNER_MODEL
+QA_MIN_SCORE = float(env("QA_MIN_SCORE", "7"))        # 0-10: a layer below this is regenerated
+QA_MAX_RETRIES = int(env("QA_MAX_RETRIES", "2"))      # extra attempts per layer after a failed check
+BEST_OF_HARD = int(env("BEST_OF_HARD", "2"))          # lettering + main graphic: make this many, keep the best
+IMAGE_COST_ESTIMATE = float(env("IMAGE_COST_ESTIMATE", "0.20"))  # $ per image, only used for the run log
 IMAGE_MODEL = env("IMAGE_MODEL", "auto")           # auto = newest gpt-image model your account has
 IMAGE_QUALITY = env("IMAGE_QUALITY", "high")          # low | medium | high
 BATCH_SIZE = int(env("BATCH_SIZE", "3"))
@@ -46,17 +57,7 @@ MAX_UPSCALE_PASSES = int(env("MAX_UPSCALE_PASSES", "3"))
 # The ready alert only flags a file for upscaling below this share of the target (0.75 x 200 = 150 DPI).
 REVIEW_OK_RATIO = float(env("REVIEW_OK_RATIO", "0.75"))
 
-# Upscale mode:
-#   off    = (default) no upscaling. Finished files go to Ready\<shirt name>\, you get an alert, you upscale
-#            any file you want by hand and swap it in that folder, then run: python run.py approve "<shirt name>"
-#   manual = the script sorts files into Work\<shirt>\to_upscale\2x, 4x, 6x. You drag each folder into
-#            Gigapixel (Wonder 3.5, cloud render, that scale), export PNGs to Work\<shirt>\upscaled,
-#            then run: python run.py finish <shirt>
-#   cli    = the script runs Gigapixel itself (only if your version has a working command-line tool)
-UPSCALE_MODE = env("UPSCALE_MODE", "off").lower()
-
-# Topaz Gigapixel (Windows). The command is a template; run `python run.py probe-topaz`
-# to see the real flags your version supports, then adjust GIGAPIXEL_ARGS.
+# Topaz Gigapixel: not used by the pipeline (you upscale by hand). Kept only for the optional upscaler module.
 GIGAPIXEL_EXE = env("GIGAPIXEL_EXE", r"C:\Program Files\Topaz Labs LLC\Topaz Gigapixel\gigapixel.exe")
 GIGAPIXEL_MODEL = env("GIGAPIXEL_MODEL", "Wonder 3.5")
 GIGAPIXEL_ARGS = env(
@@ -76,8 +77,17 @@ DRIVE_PARENT_FOLDER_ID = env("DRIVE_PARENT_FOLDER_ID", "")  # optional
 LONG_SLEEVE_STYLE = env("LONG_SLEEVE_STYLE", "cut and sew").lower()
 SHORT_SLEEVE_STYLE = env("SHORT_SLEEVE_STYLE", "auto").lower()
 
+# Hands-off: after the layers pass the check, upload to Drive and email the link without waiting for approval.
+# Set AUTO_APPROVE=0 to hold every shirt for your review. Per shirt you can add --review or --auto in the hint.
+AUTO_APPROVE = env("AUTO_APPROVE", "1") == "1"
+
+# Web page
+WEB_HOST = env("WEB_HOST", "127.0.0.1")               # 0.0.0.0 lets other devices (your phone over Tailscale) in
+WEB_PORT = int(env("WEB_PORT", "8765"))
+WEB_PASSWORD = env("WEB_PASSWORD", "")                # set this whenever WEB_HOST is not 127.0.0.1
+
 # Alerts when a shirt is ready
 OPEN_FOLDER = env("OPEN_FOLDER", "1") == "1"          # open the Ready folder in File Explorer
 NOTIFY_EMAIL_TO = env("NOTIFY_EMAIL_TO", "")          # optional: email address to alert
 GMAIL_ADDRESS = env("GMAIL_ADDRESS", "")              # Gmail account that sends the alert
-GMAIL_APP_PASSWORD = env("GMAIL_APP_PASSWORD", "")    # a Gmail "app password", not your normal password
+GMAIL_APP_PASSWORD = env("GMAIL_APP_PASSWORD", "").replace(" ", "")  # a Gmail "app password" (spaces are ignored)
