@@ -6,6 +6,7 @@
   python run.py redo x 3 5                  regenerate assets 3 and 5 of shirt x, then upscale them
   python run.py finish x                    after Gigapixel: pick up Work\\x\\upscaled into final
   python run.py approve x                   upload Work\\x\\final to Drive, print the share link
+  python run.py models                      list the OpenAI models your account can use
   python run.py probe-topaz                 show Gigapixel's command-line options
 
 Hints: put corrections after the file name in quotes, or save a text file next to the mockup with the
@@ -64,7 +65,13 @@ def process(mockup: Path, plan_only=False, hint=""):
 
 def build(wd: Path, plan: dict, assets: list):
     mockup = Path(plan["mockup"])
-    results = generator.generate_all(mockup, assets, wd / "raw", log)
+    try:
+        results = generator.generate_all(mockup, assets, wd / "raw", log)
+    except generator.FatalImageError as e:
+        log(f"STOPPED - OpenAI image error that would hit every asset: {str(e)[:300]}")
+        log("Run 'python run.py models' to see which image models your account has, then set IMAGE_MODEL in .env.")
+        log("Your plan is saved; once fixed, rerun 'process' (finished images are kept).")
+        return
     final = wd / "final"
     status_file = wd / "status.json"
     status = json.loads(status_file.read_text()) if status_file.exists() else {"failed": []}
@@ -232,6 +239,11 @@ if __name__ == "__main__":
             finish(a[1])
         elif cmd == "approve" and len(a) >= 2:
             approve(a[1])
+        elif cmd == "models":
+            from openai import OpenAI
+            ids = sorted(m.id for m in OpenAI().models.list())
+            print("Image models:", [i for i in ids if "image" in i] or "none")
+            print("Vision/chat models (for PLANNER_MODEL):", [i for i in ids if i.startswith(("gpt-4", "gpt-5", "o"))])
         elif cmd == "probe-topaz":
             upscaler.probe()
         else:

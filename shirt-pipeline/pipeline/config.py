@@ -29,7 +29,7 @@ RULES_FILE = Path(env("RULES_FILE", ROOT / "rules" / "extraction_rules.md"))
 PATTERN_REFERENCE = Path(env("PATTERN_REFERENCE", ROOT / "rules" / "LONG_SLEEVE_PATTERN_REFERENCE.png"))
 
 PLANNER_MODEL = env("PLANNER_MODEL", "gpt-4.1")      # vision model that reads the mockup
-IMAGE_MODEL = env("IMAGE_MODEL", "gpt-image-1")
+IMAGE_MODEL = env("IMAGE_MODEL", "auto")           # auto = newest gpt-image model your account has
 IMAGE_QUALITY = env("IMAGE_QUALITY", "high")          # low | medium | high
 BATCH_SIZE = int(env("BATCH_SIZE", "3"))
 # "high" makes the image model stick closer to the attached mockup. Set empty to disable.
