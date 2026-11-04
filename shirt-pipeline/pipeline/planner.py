@@ -44,6 +44,18 @@ default to about 10 inches on the longest side unless clearly smaller or larger)
 """
 
 
+INVENTORY_MODE = """
+INVENTORY MODE: do NOT write image prompts yet. Only list the assets, following the numbering order in the rules.
+Return ONLY JSON: {"inventory": [{"n": 1, "name": "short_slug", "kind": "element" or "background",
+"what": "one short sentence describing exactly this one item and where it sits"}]}
+Be strict about splitting: the focal graphic is only the main subject. EVERY other animal, character, prop, moon,
+snowman, owl, badge or object is its OWN entry. Each sleeve graphic that differs from the body is its OWN entry.
+Lettering groups in different places are separate entries. The clean background is the LAST entry.
+Identify animals precisely (moose versus reindeer, etc). A shirt like a scene with 6 distinct things has 6+ entries.
+If the user gave a correction hint, it overrides your reading.
+"""
+
+
 def _data_url(path: Path) -> str:
     mime = mimetypes.guess_type(path.name)[0] or "image/png"
     return f"data:{mime};base64," + base64.b64encode(path.read_bytes()).decode()
@@ -53,21 +65,36 @@ def plan(mockup: Path, hint: str = "") -> dict:
     rules = config.RULES_FILE.read_text(encoding="utf-8")
     user_text = "extraction" + (f"\n{hint}" if hint else "")
     client = OpenAI()
-    resp = client.chat.completions.create(
-        model=config.PLANNER_MODEL,
-        response_format={"type": "json_object"},
-        messages=[
-            {"role": "system", "content": rules + "\n\n" + OVERRIDE},
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": user_text},
-                    {"type": "image_url", "image_url": {"url": _data_url(mockup)}},
-                ],
-            },
-        ],
+    image_url = _data_url(mockup)
+
+    def ask(system, text):
+        resp = client.chat.completions.create(
+            model=config.PLANNER_MODEL,
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": system},
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": text},
+                        {"type": "image_url", "image_url": {"url": image_url}},
+                    ],
+                },
+            ],
+        )
+        return json.loads(resp.choices[0].message.content)
+
+    # Pass 1: inventory only. A short list is much harder to merge by accident.
+    inv = ask(rules + "\n\n" + INVENTORY_MODE, user_text)
+    inventory = inv.get("inventory", [])
+    # Pass 2: one prompt per inventory entry, no merging allowed.
+    forced = (
+        user_text
+        + "\n\nFINAL INVENTORY (you MUST produce exactly one asset per entry, same order, same n and name, "
+        + "no merging and no extra assets; the background stays last):\n"
+        + json.dumps(inventory, indent=1)
     )
-    data = json.loads(resp.choices[0].message.content)
+    data = ask(rules + "\n\n" + OVERRIDE, forced)
     assets = data.get("assets", [])
     if not assets:
         raise RuntimeError("Planner returned no assets")
