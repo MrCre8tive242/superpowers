@@ -22,12 +22,12 @@ def log(msg):
     print(f"[{dt.datetime.now():%H:%M:%S}] {msg}", flush=True)
 
 
-def process(mockup: Path, plan_only=False):
+def process(mockup: Path, plan_only=False, hint=""):
     name = generator.slug(mockup.stem)
     wd = config.WORK / name
     wd.mkdir(parents=True, exist_ok=True)
     log(f"Planning {name} ...")
-    plan = planner.plan(mockup)
+    plan = planner.plan(mockup, hint)
     (wd / "plan.json").write_text(json.dumps(plan, indent=2), encoding="utf-8")
     log(f"Mode: {plan.get('mode')}  Assets: {len(plan['assets'])}")
     for note in plan.get("notes", []):
@@ -95,9 +95,9 @@ if __name__ == "__main__":
     if cmd == "watch":
         watch()
     elif cmd == "process":
-        process(Path(sys.argv[2]))
+        process(Path(sys.argv[2]), hint=" ".join(sys.argv[3:]))
     elif cmd == "plan-only":
-        process(Path(sys.argv[2]), plan_only=True)
+        process(Path(sys.argv[2]), plan_only=True, hint=" ".join(sys.argv[3:]))
     elif cmd == "approve":
         approve(sys.argv[2])
     elif cmd == "probe-topaz":

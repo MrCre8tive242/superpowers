@@ -37,7 +37,7 @@ BATCH_SIZE = int(env("BATCH_SIZE", "3"))
 BACKGROUND_DPI = int(env("BACKGROUND_DPI", "150"))
 ELEMENT_DPI = int(env("ELEMENT_DPI", "200"))
 DEFAULT_ELEMENT_INCHES = float(env("DEFAULT_ELEMENT_INCHES", "10"))
-MAX_UPSCALE_PASSES = int(env("MAX_UPSCALE_PASSES", "2"))
+MAX_UPSCALE_PASSES = int(env("MAX_UPSCALE_PASSES", "3"))
 
 # Topaz Gigapixel (Windows). The command is a template; run `python run.py probe-topaz`
 # to see the real flags your version supports, then adjust GIGAPIXEL_ARGS.

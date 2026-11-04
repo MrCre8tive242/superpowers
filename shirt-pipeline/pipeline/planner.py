@@ -33,6 +33,11 @@ IMPORTANT: the "3 or 4 assets per message" limit does NOT apply here. The script
 list EVERY asset from your full inventory in this one JSON (all lettering, the focal graphic, every supporting
 element, every sleeve element, edge decorations, and the clean background file(s) last). Never stop at 3 and
 never write "continue with the rest" or "Batch 2" in the notes: return the complete list now.
+SPLIT RULE: never merge supporting elements into the focal graphic. The focal graphic is ONLY the main subject.
+Every other animal, character, prop, moon, snowman, owl, badge, flower or similar object is its OWN asset, and each
+sleeve graphic (snowflake clusters, trees, stripes that differ from the body) is its OWN asset. Typical shirts have
+6 to 10 assets. Identify animals precisely (for example moose versus reindeer, owl species) by looking closely.
+If the user gives a hint line after the word "extraction", treat it as a correction that overrides your reading.
 Keep every banned word out of the prompts exactly as the rules require.
 print_inches: realistic printed size of the asset on the garment (background per the rules' sizes; elements
 default to about 10 inches on the longest side unless clearly smaller or larger). Background assets go LAST.
