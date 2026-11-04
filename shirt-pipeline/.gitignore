@@ -1,0 +1,6 @@
+.env
+credentials.json
+token.json
+Work/
+Inbox/
+__pycache__/
